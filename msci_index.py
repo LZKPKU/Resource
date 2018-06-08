@@ -24,38 +24,20 @@ def get_ftp_file(dataset, date):
 # @param date
 #
 # @return
-
-def get_local_file(dataset, date):
-    # 存在明天的文件夹里
-    date = tradingday.next(date)
-    return "D:/test/{dataset}/{yyyy}/".format(
-#    return "/home/lizekun/room/py/util/{dataset}/{yyyy}/".format(
-#    return "~/data/stock/msci/{dataset}/{yyyy}/".format(
-        dataset = dataset,
-        yyyy=date[0:4],
-        date=date
-    )
 def get_local_raw_file(dataset, date):
     # 文件名是今天的
     date = str(date)
-    return "D:/test/{dataset}/{yyyy}/{date}_{date}_D_{dataset}".format(
+    #return "D:/test/{dataset}/{yyyy}/{date}_{date}_D_{dataset}".format(
     dataset = dataset,
     yyyy = date[0:4],
     date = date
     )
-#    return "/home/lizekun/room/py/util/{dataset}/{yyyy}/{date}_{date}_d_{dataset}".format(
-#    return "~/data/stock/msci/{dataset}/{yyyy}/{date}_{date}_D_{dataset}".format(
-#       dataset=dataset,
-#        yyyy=date[0:4],
-#        date=date
-#    )
+
 
 def get_index_weight_file(dataset, date):
     # 存在明天的文件夹里
     date = tradingday.next(date)
-#    return "/home/lizekun/room/py/util/{dataset}/{yyyy}/{mm}/{dataset}_{date}.csv".format(
-#    return "~/data/stock/msci_{dataset}/{yyyy}/{mm}/{dataset}_{date}.csv".format(
-    return "D:/test/{dataset}/{yyyy}/{mm}/{dataset}_{date}.csv".format(
+    #return "D:/test/{dataset}/{yyyy}/{mm}/{dataset}_{date}.csv".format(
         dataset=dataset,
         yyyy=date[0:4],
         mm=date[4:6],
@@ -66,33 +48,43 @@ def get_index_weight_file(dataset, date):
 # @param date
 # @return
 def download_ftp_file(dataset, date):
-    # get path
+    # get ftp path
 
     ftp_file = get_ftp_file(dataset, date)
-    local_path = get_local_file(dataset, date)
-    local_zip_file = local_path+dataset+'_'+date+'.zip'
-    tomorrow = tradingday.next(date)
-    local_weight_path = local_path+tomorrow[4:6]
+
+    # get zip file path
+    local_path = get_local_raw_file(dataset, date)
+    local_zip_file = local_path + '.zip'
+    local_path = os.path.dirname(local_path)
+
+    # get weight csv path
+    local_weight_path = os.path.dirname(get_index_weight_file(dataset, date))
+
     # set login information
     FTP_SERVER = "ftp2.msci.com"
     USER = "hiflsbwq"
     PWD = "G1xkxfgudpxzk-"
+
     # test for existing path
     if not os.path.exists(local_path):
         os.makedirs(local_path)
+        print("Create new path: ",local_path)
+
     if not os.path.exists(local_weight_path):
         os.makedirs(local_weight_path)
+        print("Create new path: ",local_weight_path)
+
     if os.path.exists(local_zip_file):
         print("--file exists!--")
         return False
+
     # ftp connection
     ftp = FTP()
     ftp.connect(FTP_SERVER, 21)
     ftp.login(USER, PWD)
     # download and write
     fp = open(local_zip_file, "wb+")
-    bufsize = 1024
-    ftp.retrbinary('RETR ' + ftp_file, fp.write, bufsize)
+    ftp.retrbinary('RETR ' + ftp_file, fp.write, 1024)
     fp.flush()
     # close file and connection
     fp.close()
@@ -102,10 +94,7 @@ def download_ftp_file(dataset, date):
     azip = zipfile.ZipFile(local_zip_file)
     azip.extractall(local_path)
     azip.close()
-
-
-
-
+    print("Download Successfully!\n")
 
 # @brief raw_file是msci的原始数据文件，解析，从中抽取数据表
 
@@ -170,9 +159,7 @@ def parse_raw_file(raw_file):
         # 将列名赋予Dataframe并返回
         data.columns = column
         return data
-        # table_name = table_name.replace(" ","_")
-        # table_name+=".csv"
-        # data.to_csv(table_name,sep=",")
+ 
     all_table_name = ['SECURITY CONSTITUENTS FUTURE',
                       'SECURITY CODE MAP']
     all_table = {x:extract(x) for x in all_table_name}
@@ -189,8 +176,10 @@ def parse_raw_file(raw_file):
 # @return 无
 
 def parse_raw_file_and_save(raw_file, index_weight_file):
+
     tables = parse_raw_file(raw_file)
     wgt = tables["SECURITY CONSTITUENTS FUTURE"]
+    wgt.to_csv("haha.csv")
     map = tables["SECURITY CODE MAP"]
     wgt["code"] = 0
 
@@ -204,20 +193,24 @@ def parse_raw_file_and_save(raw_file, index_weight_file):
 
     for i in range(len(msci_code)):
         wgt.loc[wgt_code == msci_code[i], "code"] = str(code[i]).zfill(6)
+
+    pattern = "(\d{8,8}).csv"
+    date = re.findall(pattern,index_weight_file)[0]
+    wgt = wgt[wgt["as_of_date"] == date]
     df = pd.DataFrame(wgt[["calc_date", "msci_index_code"
         , "code", "initial_weight"]])
     df.to_csv(index_weight_file, index=False)
-    # return df
+    print("Complete!\n")
 
 
 if __name__ == "__main__":
-    import argparse
-    import tradingday
+    import re
+    import os
     import pandas as pd
     import numpy as np
-    import re
     from ftplib import FTP
-    import os
+    import argparse
+    import tradingday
     import zipfile
 
     parser = argparse.ArgumentParser()
@@ -236,4 +229,3 @@ if __name__ == "__main__":
         raw_file = get_local_raw_file(options.dataset, options.date)
         index_weight_file = get_index_weight_file(options.dataset, options.date)
         parse_raw_file_and_save(raw_file, index_weight_file)
-
