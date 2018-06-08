@@ -9,9 +9,10 @@
 # 注意当天下载文件第二天使用，文件夹名称应相符
 # @return
 def get_ftp_file(dataset, date):
-    # 这里是今天日期
+    # 用今天日期
     # 注意，在msci的ftp上文件名全部为小写
     date = str(date)
+    
     return "{date}_{date}d_{dataset}.zip".format(
         date = date,
         dataset = dataset.lower()
@@ -25,8 +26,9 @@ def get_ftp_file(dataset, date):
 #
 # @return
 def get_local_raw_file(dataset, date):
-    # 文件名是今天的
+    # 存在今天的文件夹里
     date = str(date)
+    
     #return "D:/test/{dataset}/{yyyy}/{date}_{date}_D_{dataset}".format(
     dataset = dataset,
     yyyy = date[0:4],
@@ -35,8 +37,9 @@ def get_local_raw_file(dataset, date):
 
 
 def get_index_weight_file(dataset, date):
-    # 存在明天的文件夹里
+    # 存在下一个交易日的文件夹里（因为权值在下一个交易日使用）
     date = tradingday.next(date)
+    
     #return "D:/test/{dataset}/{yyyy}/{mm}/{dataset}_{date}.csv".format(
         dataset=dataset,
         yyyy=date[0:4],
@@ -49,7 +52,6 @@ def get_index_weight_file(dataset, date):
 # @return
 def download_ftp_file(dataset, date):
     # get ftp path
-
     ftp_file = get_ftp_file(dataset, date)
 
     # get zip file path
@@ -65,7 +67,7 @@ def download_ftp_file(dataset, date):
     USER = "hiflsbwq"
     PWD = "G1xkxfgudpxzk-"
 
-    # test for existing path
+    # test for save paths and create them if necessary
     if not os.path.exists(local_path):
         os.makedirs(local_path)
         print("Create new path: ",local_path)
@@ -73,7 +75,8 @@ def download_ftp_file(dataset, date):
     if not os.path.exists(local_weight_path):
         os.makedirs(local_weight_path)
         print("Create new path: ",local_weight_path)
-
+    
+    # test for zip file path, remind user and terminate if existed
     if os.path.exists(local_zip_file):
         print("--file exists!--")
         return False
@@ -82,15 +85,17 @@ def download_ftp_file(dataset, date):
     ftp = FTP()
     ftp.connect(FTP_SERVER, 21)
     ftp.login(USER, PWD)
+    
     # download and write
     fp = open(local_zip_file, "wb+")
     ftp.retrbinary('RETR ' + ftp_file, fp.write, 1024)
     fp.flush()
+    
     # close file and connection
     fp.close()
     ftp.quit()
 
-    # zip
+    # zip file
     azip = zipfile.ZipFile(local_zip_file)
     azip.extractall(local_path)
     azip.close()
@@ -176,8 +181,9 @@ def parse_raw_file(raw_file):
 # @return 无
 
 def parse_raw_file_and_save(raw_file, index_weight_file):
-
     tables = parse_raw_file(raw_file)
+    
+    # get two useful tables
     wgt = tables["SECURITY CONSTITUENTS FUTURE"]
     wgt.to_csv("haha.csv")
     map = tables["SECURITY CODE MAP"]
@@ -186,19 +192,25 @@ def parse_raw_file_and_save(raw_file, index_weight_file):
     msci_code = map.msci_security_code.unique()
     ticker = map.bb_ticker.unique()
     wgt_code = wgt.msci_security_code
-
+    
+    # extract the code of each stock
     code = []
     for i in ticker:
         code.append(re.match(r"(\d*)", i).group(1))
-
+    
+    # join
     for i in range(len(msci_code)):
         wgt.loc[wgt_code == msci_code[i], "code"] = str(code[i]).zfill(6)
 
+    # get the date of next trading day and select data of that day
     pattern = "(\d{8,8}).csv"
     date = re.findall(pattern,index_weight_file)[0]
     wgt = wgt[wgt["as_of_date"] == date]
+    
+    # choose the useful columns
     df = pd.DataFrame(wgt[["calc_date", "msci_index_code"
         , "code", "initial_weight"]])
+    
     df.to_csv(index_weight_file, index=False)
     print("Complete!\n")
 
