@@ -107,23 +107,25 @@ def download_ftp_file(dataset, date):
 
 #
 # @return 一个数据表的dict，
-# 主要是'SECURITY CONSTITUENTS FUTURE','SECURITY CODE MAP'
-# 供parse_raw_file_and_save函数使用
-def parse_raw_file(raw_file):
+# 供parse_raw_file_and_save函数使用,mode默认返回所有表
+# 但考虑到速度因素，当获取weight数据时只返回有用的两张表
+# 'SECURITY CONSTITUENTS FUTURE','SECURITY CODE MAP'
+
+def parse_raw_file(raw_file, mode = 0):
 
     # 将数据部分按列分割开
     def parse_line(line):
         df = []
         tmp = ""
         for i in range(len(line)):
-            if line[i].isdigit() or line[i] == ".":
+            if line[i] != "|":
                 tmp = tmp + line[i]
-            if (line[i].isdigit() or line[i] == " ") \
+            if (line[i].isalnum() or line[i] == " ") \
                     and (i + 1 == len(line) or line[i + 1] == "|"):
-                df.append(tmp)
+                df.append(tmp.strip())
                 tmp = ""
         return df
-
+    
     # 打开文件，按行读取
     def extract(tname):
         with open(raw_file) as f:
@@ -135,7 +137,6 @@ def parse_raw_file(raw_file):
                 if re.search(pattern, raw[line]):
                     pos = line
 
-        # find # to get position of the start of a table
         pattern = r"^# (\d{1,2}) ((\w*\b\s)*)\s*"
         result = re.match(pattern, raw[pos])
         rows = int(result.group(1))
@@ -143,9 +144,7 @@ def parse_raw_file(raw_file):
         table_name = result.group(2)
         column = []
         for j in range(rows):
-            line = raw[j + pos + 1]
-            pattern = r'^#\s*\d{1,2}\s*(\w*\b\s)*\s*(\w*)'
-            name = re.match(pattern, line).group(2)
+            name = raw[j + pos + 1][39:70].rstrip()
             column.append(name)
         # 表的数据部分
         while not re.match(r"\|", raw[pos]):
@@ -164,10 +163,23 @@ def parse_raw_file(raw_file):
         # 将列名赋予Dataframe并返回
         data.columns = column
         return data
- 
-    all_table_name = ['SECURITY CONSTITUENTS FUTURE',
-                      'SECURITY CODE MAP']
-    all_table = {x:extract(x) for x in all_table_name}
+
+    all_table_name = ['INDEX SAME DAY',
+                      'INDEX FUTURE',
+                      'SECURITY SAME DAY',
+                      'SECURITY FUTURE',
+                      'SECURITY CONSTITUENTS SAME DAY',
+                      'SECURITY CONSTITUENTS FUTURE',
+                      'SECURITY CODE MAP',
+                      'DIVIDENDS SAME DAY',
+                      'DIVIDENDS FUTURE'
+                      ]
+    part_table_name = ['SECURITY CONSTITUENTS FUTURE',
+                       'SECURITY CODE MAP']
+    if mode == 0:
+        all_table = {x : extract(x) for x in all_table_name}
+    else:
+        all_table = {x : extract(x) for x in part_table_name}
     return all_table
 
 # @brief 以CSV文件保存指数权重数据
@@ -181,11 +193,10 @@ def parse_raw_file(raw_file):
 # @return 无
 
 def parse_raw_file_and_save(raw_file, index_weight_file):
-    tables = parse_raw_file(raw_file)
+    tables = parse_raw_file(raw_file, 1)
     
     # get two useful tables
     wgt = tables["SECURITY CONSTITUENTS FUTURE"]
-    wgt.to_csv("haha.csv")
     map = tables["SECURITY CODE MAP"]
     wgt["code"] = 0
 
