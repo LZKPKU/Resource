@@ -28,7 +28,7 @@ def get_ftp_file(dataset, date):
 def get_local_raw_file(dataset, date):
     # 存在今天的文件夹里
     date = str(date)
-    
+    return os.path.expanduser("")
     #return "D:/test/{dataset}/{yyyy}/{date}_{date}_D_{dataset}".format(
     dataset = dataset,
     yyyy = date[0:4],
@@ -39,7 +39,7 @@ def get_local_raw_file(dataset, date):
 def get_index_weight_file(dataset, date):
     # 存在下一个交易日的文件夹里（因为权值在下一个交易日使用）
     date = tradingday.next(date)
-    
+    return os.path.expanduser("")
     #return "D:/test/{dataset}/{yyyy}/{mm}/{dataset}_{date}.csv".format(
         dataset=dataset,
         yyyy=date[0:4],
