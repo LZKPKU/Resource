@@ -3,15 +3,13 @@ import numpy as np
 import autobase as ab
 import os
 
-#year = ["2011"]
-#month = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
-year = ["2018"]
-month = ["01", "02", "03", "04", "05"]
+year = ["2012"]
+month = ["01"]
 
+#, "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+#year = ["2018"]
+#month = ["01", "02", "03", "04", "05","06","07"]
 def comp1(a, b):
-    '''
-    calculate the relative error and compare it to the threshold.
-    '''
     thes = 0.05
     avg = (a + b) / 2
     if avg != 0:
@@ -23,22 +21,22 @@ def comp1(a, b):
     else:
         return 0
 
-def F(csvpath):
-    '''
-    main function, read and reshape the input data, record the abnormal data point.
-    '''
+def F(csvpath,mode):
     name = csvpath[-12:-4]
-
-    su.write(name+"\n")
-    err.write(name + "\n")
-    vac.write(name + "\n")
-
-    binpath = csvpath
-    binpath = binpath.replace("csv","bin")
+    year = csvpath[-12:-8]
+    month = csvpath[-8:-6]
+    print(name+"\n")
+	
+    if mode:
+        binpath = csvpath
+        binpath = binpath.replace("csv","bin")
+    else:
+        #binpath = "2017newbin/" + month + "/" + "1min_" + name + ".bin"
+        binpath = "1min_bin/" + year + "/" + month + "/" + "1min_" + name + ".bin"
     if os.path.getsize(binpath):
         bindf = pd.DataFrame(ab.objects.read_kline_from_file(binpath))
     else:
-        err.write("This file is empty!\n\n")
+        print("This file is empty!\n\n")
         return 
     csvdf = pd.read_csv(csvpath)
 
@@ -82,7 +80,7 @@ def F(csvpath):
     vac.write("bin has but cvs doesn't: \n")
     for j in vacantright:
         if j[0:3]!="399":
-            vac.write(j+"\n")
+            print(j+"\n")
     result = pd.merge(csvdf,bindf,on=["stkcd","time"],how="left")
     #记录csv中没有而bin中有的stkcd
 
@@ -90,7 +88,7 @@ def F(csvpath):
     result = result[result["value_x"]!=0]
     vacantleft = result["stkcd"].unique()
 
-    vac.write("csv has but bin doesn't: \n")
+    print("csv has but bin doesn't: \n")
     for j in vacantleft:
         vac.write(j+"\n")
 
@@ -98,50 +96,29 @@ def F(csvpath):
     valuesum = sum(result["value_x"])-sum(result["value_y"])
     volumesum = sum(result["volume_x"])-sum(result["volume_y"])
 
-    su.write("value total error:"+str(valuesum)+"\n")
-    su.write("volume total error:"+str(volumesum)+"\n")
+    print("value total error:"+str(valuesum)+"\n")
+    print("volume total error:"+str(volumesum)+"\n")
 
     for i in range(len(result)):
         open = comp1(result["open_x"][i],result["open_y"][i])
         if open:
-            err.write(result["stkcd"][i]+" "+result["time"][i].astype(str)+" open"+" Err: "+str(open)+"\n")
+            print(result["stkcd"][i]+" "+result["time"][i].astype(str)+" open"+" Err: "+str(open)+"\n")
         close = comp1(result["close_x"][i], result["close_y"][i])
         if close:
-            err.write(result["stkcd"][i]+" "+result["time"][i].astype(str)+" close"+" Err: "+str(close)+"\n")
+            print(result["stkcd"][i]+" "+result["time"][i].astype(str)+" close"+" Err: "+str(close)+"\n")
         high = comp1(result["high_x"][i], result["high_y"][i])
         if high:
-            err.write(result["stkcd"][i] + " " + result["time"][i].astype(str) + " high" + " Err: "+str(high)+"\n")
+            print(result["stkcd"][i] + " " + result["time"][i].astype(str) + " high" + " Err: "+str(high)+"\n")
         low = comp1(result["low_x"][i], result["low_y"][i])
         if low:
-            err.write(result["stkcd"][i] + " " + result["time"][i].astype(str) + " low" + " Err: "+str(low)+"\n")
-    vac.write("\n")
-    su.write("\n")
-    err.write("\n")
-    
+            print(result["stkcd"][i] + " " + result["time"][i].astype(str) + " low" + " Err: "+str(low)+"\n")
+    print("\n")
+	
 if __name__ == "__main__":
-    for i in year:
-        for j in month:
-            PATH = "/data/stock/1min_csv/"+i+"/"+j+"/"
-            outfile = i+j
-            print(PATH)
-            presum = i + "/sum/"
-            preerr = i + "/err/"
-            prevac = i + "/vac/"
-            tail = ".txt"
-            pre = [presum,preerr,prevac]
-            for k in pre:
-                if not os.path.exists(k):
-                    os.makedirs(k)
-            su = open(presum + outfile + tail,'w')
-            err = open(preerr + outfile + tail,'w')
-            vac = open(prevac + outfile + tail,'w')
-    
-    
-            for m in sorted(os.listdir(PATH)):
-                csvpath = PATH + m
-                F(csvpath)
-                print(csvpath)
+    date = input("Please input the date:\n")
+	year = date[:4]
+	month = date[4:6]
+    PATH = "/data/stock/1min_csv/"+year+"/"+month+"/1min_"+date+".csv"
+    F(csvpath,0)
+    print(csvpath+'\n')      
         
-            su.close()
-            err.close()
-            vac.close()

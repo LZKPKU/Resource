@@ -6,7 +6,8 @@ import sys
 pre = "data/"
 repeatthres = 5
 zerothres = 1
-year = ["2012","2013","2014","2015","2016","2017","2018"]
+year = ["2011","2010"]
+#year = ["2012","2013","2014","2015","2016","2017","2018"]
 def repeat():
     dfff = []
     for i in year:
@@ -77,6 +78,6 @@ if __name__ == "__main__":
     repeatdf["type"] = "repeat"
     zerodf = zero()
     zerodf["type"] = "zero"
-    nobin = pd.read_csv(pre + "nobin.csv")
-    final = pd.concat([repeatdf,zerodf,nobin],ignore_index=True).sort_values(by=["date"])
-    final.to_csv("final_result.csv",index=False)
+    # nobin = pd.read_csv(pre + "nobin.csv")
+    final = pd.concat([repeatdf,zerodf],ignore_index=True).sort_values(by=["date"])
+    final.to_csv("final_result2010.csv",index=False)

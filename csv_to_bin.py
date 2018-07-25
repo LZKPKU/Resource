@@ -6,13 +6,19 @@ import os
 def F(csvpath):
     binpath = csvpath
     binpath = binpath.replace("csv", "bin")
+    date = csvpath[-12:-4]
+    outpath = "newbin/1min_" + date + ".bin"
     csvdf = pd.read_csv(csvpath)
     bindf = []
 
     for i in range(len(csvdf)):
-        tmp = (csvdf["stkcd"][i].encode(encoding="ascii"), csvdf["date"][i], csvdf["time"][i],
-               csvdf["open"][i], csvdf["high"][i], csvdf["low"][i], csvdf["close"][i], csvdf["volume"][i],
-               csvdf["value"][i], np.nan, np.nan)
+        if not csvdf["time"][i]%10000:
+            time = csvdf["time"][i] - 4100
+        else:
+            time = csvdf["time"][i] - 100
+        tmp = (csvdf["stkcd"][i].encode(encoding="ascii"), csvdf["date"][i], time,
+               csvdf["open"][i], csvdf["high"][i], csvdf["low"][i], csvdf["close"][i], csvdf["volume"][i]/10000,
+               csvdf["value"][i]/10000, np.nan, np.nan)
         bindf.append(tmp)
 
     bindf = pd.DataFrame(bindf,
@@ -25,7 +31,7 @@ def F(csvpath):
                       dtype=[('code', 'S32'), ('date', '<i4'), ('time', '<i4'), ('open', '<f4'), ('high', '<f4'),
                              ('low', '<f4'), ('close', '<f4'), ('volume', '<f4'), ('value', '<f4'), ('vwap', '<f4'),
                              ('ret', '<f4')])
-    output.tofile(binpath)
+    output.tofile(outpath)
 
 if __name__ == "__main__":
     # dateset = ["20120712",
@@ -46,6 +52,7 @@ if __name__ == "__main__":
 
     dateset = pd.read_csv("final_result.csv")["date"].unique()
     for i in dateset:
+        i = str(i)
         year = i[:4]
         month = i[4:6]
         csvpath = "/data/stock/1min_csv/"+year+"/"+month+"/"+"1min_"+i+".csv"
