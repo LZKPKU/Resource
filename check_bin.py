@@ -1,18 +1,56 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jul 25 13:50:22 2018
+#!/usr/bin/env python
+# encoding: utf-8
 
-@author: Administrator
 """
-
+tools for checking and correcting the 1min-binary data
+"""
+import argparse
 import os
+from datetime import datetime,timedelta
 import numpy as np
 import pandas as pd
 import autobase as ab
 
-def check(csvpath):
+STYLE = "%Y%m%d"    #日期格式
+TODAY = datetime.strftime(datetime.today(),STYLE) #今天日期
+LOGPATH = "log.txt" #日志文件路径
+ZERO_THRES = 1      #数据点为0需要处理的阈值
+REPEAT_THRES = 20    #数据点重复需要处理的阈值
+REER_THRES = 0.05   #相对误差需要记录下来的阈值
+
+
+# @brief 给定两个数，计算相对误差
+# @param a
+# @param b
+# @return relative error
+def comp(a, b):
+    '''
+    calculate the relative error and compare it to the threshold.
+    '''
+    # 阈值为 5%
+    # 如果有一个为0但另一个不为0,则结果为2
+    avg = (a + b) / 2
+    if avg != 0:
+        rerr = abs(a - b) / avg
+        if rerr > REER_THRES:
+            return rerr
+        else:
+            return 0
+    else:
+        return 0
+# @brief 检查某一日期的bin数据质量
+# @param csvpath csv文件的路径
+# @return
+# 将检查结果写入log文件中
+def check_function(csvpath,correct=0):
+    
+    VV_FLAG = False        # value and volume error
+    ZERO_FLAG = False      # zero error
+    REPEAT_FLAG = False    # repeat error
+    
     binpath = csvpath.replace("csv","bin")
     csvdf = pd.read_csv(csvpath)
+    #判断当天bin数据缺失的情况
     if os.path.getsize(binpath):
         bindf = bindf = pd.DataFrame(ab.objects.read_kline_from_file(binpath))
     else:
@@ -22,7 +60,7 @@ def check(csvpath):
     bindf = bindf[["code","time","close","open","high","low","volume","value"]]
     csvdf = csvdf[["stkcd","time","close","open","high","low","volume","value"]]
     
-    # deal with the IF code
+    #处理代码为IF开头的情况，主要在2011年之前存在
     end = len(bindf)
     for i in range(len(bindf)):
         if bindf["code"][i][0:2].decode("ascii")=="IF":
@@ -32,8 +70,8 @@ def check(csvpath):
     
     tmp = []
     tmpp = []
-    # csvdf.to_csv("csvdf.csv")
-    # bindf.to_csv("bindf.csv")
+    #处理bin数据和csv数据时间不一致
+    #处理bin数据中code列有乱码的情况
     for i in range(len(bindf)):
         tmp.append(bindf["code"][i][:9].decode("ascii"))
         if(bindf["time"][i] == 145900):
@@ -42,68 +80,193 @@ def check(csvpath):
             tmpp.append(113000)
         else:
             tmpp.append(bindf["time"][i+1])
-
+    
+    #处理csv数据和bin数据中value和volume单位不一致
     bindf = bindf.drop(["code","time"],axis=1)
     bindf["stkcd"] = tmp
     bindf["time"] = tmpp
     csvdf["volume"] = csvdf["volume"]/10000
     csvdf["value"] = csvdf["value"]/10000
-    
-    result = pd.merge(csvdf,bindf,on=["stkcd","time"],how="right")
-    #记录csv中没有而bin中有的stkcd
-    result = result[np.isnan(result["close_x"])]
-    result = result[result["value_y"]!=0]
-    vacantright = result["stkcd"].unique()
-
-    vac.write("bin has but cvs doesn't: \n")
-    for j in vacantright:
-        if j[0:3]!="399":
-            log.write(j+"\n")
-    result = pd.merge(csvdf,bindf,on=["stkcd","time"],how="left")
-    #记录csv中没有而bin中有的stkcd
-
-    result = result[np.isnan(result["close_y"])]
-    result = result[result["value_x"]!=0]
-    vacantleft = result["stkcd"].unique()
-
-    vac.write("csv has but bin doesn't: \n")
-    for j in vacantleft:
-        log.write(j+"\n")
-
+  
+    # csv中有而bin中没有的股票代码
+    code = set(csvdf.code.unique()) - set(bindf.code.unique())
+    log.write("code that csv has but bin doesn't: \n")
+    for code_ in code:
+        log.write("{code} \n".format(
+                code = code_
+            )
+        )
+        
+    #计算并记录value和volume总和
     result = pd.merge(csvdf,bindf,on=["stkcd","time"])
     valuesum = sum(result["value_x"])-sum(result["value_y"])
     volumesum = sum(result["volume_x"])-sum(result["volume_y"])
-
-    log.write("value total error:"+str(valuesum)+"\n")
-    log.write("volume total error:"+str(volumesum)+"\n")
-    
-    if valuesum > 1 & volumesum > 1:
+    log.write("value total error(csv - bin): {valuesum}\n".format(
+            valuesum = str(valuesum)
+        )
+    )
+    log.write("volume total error(csv - bin): {volumesum}\n".format(
+            volumesum = str(volumesum)
+        )
+    )
+    #如果差值大于1就认为这两列数据有问题
+    if valuesum > 1 or volumesum > 1:
+        VV = True
         log.write("value and volume data isn't correct!")
     else:
         log.write("value and volume data doesn't have problem.")
-        
+    # 记录open,low,high,close四列偏差过大的情况
+    error = []
+    items = ["open","high","low","close"]
     for i in range(len(result)):
-        open = comp1(result["open_x"][i],result["open_y"][i])
-        if open:
-            log.write(result["stkcd"][i]+" "+result["time"][i].astype(str)+" open"+" Err: "+str(open)+"\n")
-        close = comp1(result["close_x"][i], result["close_y"][i])
-        if close:
-            log.write(result["stkcd"][i]+" "+result["time"][i].astype(str)+" close"+" Err: "+str(close)+"\n")
-        high = comp1(result["high_x"][i], result["high_y"][i])
-        if high:
-            log.write(result["stkcd"][i] + " " + result["time"][i].astype(str) + " high" + " Err: "+str(high)+"\n")
-        low = comp1(result["low_x"][i], result["low_y"][i])
-        if low:
-            log.write(result["stkcd"][i] + " " + result["time"][i].astype(str) + " low" + " Err: "+str(low)+"\n")
-    
+        for item in items:
+            x = item + "_x"
+            y = item + "_y"
+            _ = comp(result[x][i],result[y][i])
+            if _:
+                error.append(result["stkcd"][i],result["time"][i],item,_)
+                info = "{code} {time} {item} Err:{err}\n".format(
+                        code = result["stkcd"][i],
+                        time = result["time"][i],
+                        item = item,
+                        err = str(_)
+                    )
+                log.write(info)
     log.write("\n")
+    if correct:
+        error = pd.DataFrame(error)
+        zero = error[error[4] == "2.0"]
+        repeat = error[error[4] != "2.0"]
+        zero.groupby([0,1][2].count())
+        repeat.groupby([0,1][2].count())
+        zero = zero[zero > ZERO_THRES].reset_index()
+        
     
-if __name__ == "__main__":
-    '''
-    determine the date that needs checking
-    '''
-    csvpath = "/data/stock/1min_csv/2018/01/1min_20180104.csv"
-    log_file = "20180104.txt"
-    with open(log_file,'w') as log:
-        log.write(str(date)+"\n")
-        check(csvpath)
+
+
+
+# @brief 用csv数据替换掉某一日期的bin数据
+# @param csvpath csv文件的路径
+# @return
+    
+def replace_function(csvpath):
+    binpath = csvpath.replace("csv","bin")
+    #outpath = binpath
+    # test
+    outpath = "test.bin"
+    #判断当天bin数据缺失的情况
+    if os.path.getsize(binpath):
+        ori_bindf = pd.DataFrame(ab.objects.read_kline_from_file(binpath))
+    else:
+        log.write("Binary file doesn't exist.\n")
+        return 
+    csvdf = pd.read_csv(csvpath)
+    bindf = []
+    #统一时间标准，将csvdf转换为bindf
+    for i in range(len(csvdf)):
+        if not csvdf["time"][i]%10000:
+            time = csvdf["time"][i] - 4100
+        else:
+            time = csvdf["time"][i] - 100
+        tmp = (csvdf["stkcd"][i].encode(encoding="ascii"), csvdf["date"][i], time,
+               csvdf["open"][i], csvdf["high"][i], csvdf["low"][i], csvdf["close"][i], csvdf["volume"][i]/10000,
+               csvdf["value"][i]/10000, np.nan, np.nan)
+        bindf.append(tmp)
+    newdf = bindf
+    
+    bindf = pd.DataFrame(bindf,
+    columns=["code", "date", "time", "open", "high", "low", "close", "volume", "value", "vwap",
+            "ret"])
+    bindf.sort_values(["code", "date", "time"], inplace=True)
+    #将bin中有而csv中没有的数据复制进newdf
+    code = set(ori_bindf.code.unique()) - set(bindf.code.unique())
+    
+    for i in range(len(ori_bindf)):
+        if ori_bindf["code"][i] in code:
+            tmp = (ori_bindf["code"][i],
+                       ori_bindf["date"][i],
+                       ori_bindf["open"][i],
+                       ori_bindf["high"][i],
+                       ori_bindf["low"][i],
+                       ori_bindf["close"][i],
+                       ori_bindf["volume"][i],
+                       ori_bindf["value"][i],
+                       ori_bindf["vwap"][i],
+                       ori_bindf["ret"][i])
+            newdf.append(tmp)
+            
+    newdf = pd.DataFrame(newdf,
+    columns=["code", "date", "time", "open", "high", "low", "close", "volume", "value", "vwap",
+            "ret"])
+    newdf.sort_values(["code", "date", "time"], inplace=True)
+    # 将newdf输出成binary文件
+    output = list(map(lambda x: tuple(newdf.iloc[x]), range(len(newdf))))
+    output = np.array(output,
+                      dtype=[('code', 'S32'), ('date', '<i4'), ('time', '<i4'), ('open', '<f4'), ('high', '<f4'),
+                             ('low', '<f4'), ('close', '<f4'), ('volume', '<f4'), ('value', '<f4'), ('vwap', '<f4'),
+                             ('ret', '<f4')])
+    output.tofile(outpath)
+    log.write("Replace successfully!\n")
+    
+# @brief 计算某两个日期中间的所有日期
+# @param start 起始日期（包含）
+# @param end 结束日期（包含）
+# @return 日期的字符串列表
+    
+def daysbetween(start,end):
+    start_ = datetime.strptime(start,STYLE)
+    end_ = datetime.strptime(end,STYLE)
+    day = timedelta(days=1)
+    dates = []
+    d = start_
+    while d < end_ + day:
+        dates.append(datetime.strftime(d,STYLE))
+        d = d + day
+    return dates
+
+# @brief 处理主要功能前后的其他操作
+# @param start 起始日期（包含）
+# @param end 结束日期（包含）
+# @return 
+def index(start,end,mode):
+    dates = daysbetween(start,end)
+    log_mode = ["check","check_and_correct","replace"]
+    with open(LOGPATH,"w") as log:
+        log.write("log date: "+TODAY+"\n")
+        log.write("Type: "+log_mode[mode]+"\n")
+        log.write("Start: "+dates[0]+"\n")
+        log.write("End: "+dates[-1]+"\n")
+        for day in dates:
+            csvpath = "/data/stock/1min_csv/{yyyy}/{mm}/1min_{date}.csv".format{
+                    date = day,
+                    yyyy = day[:4],
+                    mm = day[4:6]
+            }
+            if os.path.isfile(csvpath):
+                log.write(csvpath + "\n\n")
+                if mode == 0:
+                    check_function(csvpath,correct = 0)
+                if mode == 1:
+                    check_function(csvpath,correct = 1)
+                if mode == 2:
+                    replace_function(csvpath)
+
+            
+    
+ if __name__ == "__main__":
+       
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s","--begdate",help = "八位起始日期")
+    parser.add_argument("-e","--enddate",default = TODAY,help = "八位结束日期")
+    parser.add_argument("--check",action = "store_true",help="检查")
+    parser.add_argument("--check_and_correct",action = "store_true",help="检查并修改")
+    parser.add_argument("--replace",action = "store_true",help="替换")
+    
+    options = parser.parse_args()
+    
+    if options.check:
+        index(options.start,options.end,0)
+    if options.check_and_correct:
+        index(options.start,options.end,1)
+    if options.replace:
+        index(options.start,options.end,2)
