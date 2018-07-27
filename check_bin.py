@@ -45,8 +45,7 @@ def comp(a, b):
 def check_function(csvpath,correct=0):
     
     VV_FLAG = False        # value and volume error
-    ZERO_FLAG = False      # zero error
-    REPEAT_FLAG = False    # repeat error
+    ZERO_REPEAT_FLAG = False      # zero error or repeat error
     
     binpath = csvpath.replace("csv","bin")
     csvdf = pd.read_csv(csvpath)
@@ -57,7 +56,7 @@ def check_function(csvpath,correct=0):
         log.write("Binary file doesn't exist.\n")
         return
     
-    bindf = bindf[["code","time","close","open","high","low","volume","value"]]
+    bindf = bindf[["code","time","close","open","high","low","volume","value","vwap","ret"]]
     csvdf = csvdf[["stkcd","time","close","open","high","low","volume","value"]]
     
     #处理代码为IF开头的情况，主要在2011年之前存在
@@ -89,9 +88,10 @@ def check_function(csvpath,correct=0):
     csvdf["value"] = csvdf["value"]/10000
   
     # csv中有而bin中没有的股票代码
-    code = set(csvdf.code.unique()) - set(bindf.code.unique())
+    csvcode = set(csvdf.code.unique()) - set(bindf.stkcd.unique())
+    bincode = set(bindf.stkcd.unique()) - set(csvdf.code.unique())
     log.write("code that csv has but bin doesn't: \n")
-    for code_ in code:
+    for code_ in csvcode:
         log.write("{code} \n".format(
                 code = code_
             )
@@ -111,7 +111,7 @@ def check_function(csvpath,correct=0):
     )
     #如果差值大于1就认为这两列数据有问题
     if valuesum > 1 or volumesum > 1:
-        VV = True
+        VV_FLAG = True
         log.write("value and volume data isn't correct!")
     else:
         log.write("value and volume data doesn't have problem.")
@@ -132,16 +132,84 @@ def check_function(csvpath,correct=0):
                         err = str(_)
                     )
                 log.write(info)
-    log.write("\n")
-    if correct:
-        error = pd.DataFrame(error)
-        zero = error[error[4] == "2.0"]
-        repeat = error[error[4] != "2.0"]
-        zero.groupby([0,1][2].count())
-        repeat.groupby([0,1][2].count())
-        zero = zero[zero > ZERO_THRES].reset_index()
-        
+                
+    error = pd.DataFrame(error)
+    zero = error[error[4] == "2.0"]
+    repeat = error[error[4] != "2.0"]
+    zero.groupby([0])[1].count()
+    repeat.groupby([0])[1].count()
+    zerocode = set(zero[zero > ZERO_THRES].reset_index()[0].unique())
+    repeatcode = set(repeat[repeat > REPEAT_THRES].reset_index()[0].unique())
+    replace_code = zerocode | repeatcode
+    if replace_code:
+        ZERO_REPEAT_FLAG = True
+        log.write("Have zero or repeat problem.\n")
+        for code_ in replace_code:
+            log.write("{code}\n".format(
+                    code = code_
+                )
+            )
+    else:
+        log.write("Dont't have zero or repeat problem.\n")
     
+    log.write("\n")
+    
+    if correct:
+        outpath = "test.bin"
+        '''
+        correct
+        '''
+        result = pd.merge(csvdf,bindf,on=["stkcd","time"],how="outer")
+        newdf = []
+        value_src = "value_y"
+        volume_src = "volume_y"
+        open_src = "open_y"
+        close_src = "close_y"
+        high_src = "high_y"
+        low_src = "low_y"
+        
+        if VV_FLAG:
+            value_src = "value_x"
+            volume_src = "volume_x"
+            
+        # need to replace the 
+        for i in range(len(result)):
+            if not result["time"][i]%10000:
+                time = result["time"][i] - 4100
+            else:
+                time = result["time"][i] - 100
+            code = result["stkcd"][i].encode(encoding="ascii")
+            date = result["date"][i]
+            if result["stkcd"][i] in csvcode:
+                tmp = (code, date, time,
+                   result["open_x"][i], result["high_x"][i], result["low_x"][i], result["close_x"][i], 
+                   result["value_x"][i],result["volume_x"][i], result["vwap"][i], result["ret"][i])
+            elif result["stkcd"][i] in bincode:
+                tmp = (code, date, time,
+                   result["open_y"][i], result["high_y"][i], result["low_y"][i], result["close_y"][i], 
+                   result["value_y"][i],result["volume_y"][i], result["vwap"][i], result["ret"][i])
+            elif result["stkcd"][i] in replace_code:   
+                tmp = (code, date, time,
+                   result["open_x"][i], result["high_x"][i], result["low_x"][i], result["close_x"][i], 
+                   result[volume_src][i],result[value_src][i], result["vwap"][i], result["ret"][i])
+            else:
+                tmp = (code, date, time,
+                   result["open_y"][i], result["high_y"][i], result["low_y"][i], result["close_y"][i], 
+                   result[volume_src][i],result[value_src][i], result["vwap"][i], result["ret"][i])
+            newdf.append(tmp)
+        newdf = pd.DataFrame(newdf,
+        columns=["code", "date", "time", "open", "high", "low", "close", "volume", "value", "vwap",
+            "ret"])
+        newdf.sort_values(["code", "date", "time"], inplace=True)
+        # 将newdf输出成binary文件
+        output = list(map(lambda x: tuple(newdf.iloc[x]), range(len(newdf))))
+        output = np.array(output,
+                          dtype=[('code', 'S32'), ('date', '<i4'), ('time', '<i4'), ('open', '<f4'), ('high', '<f4'),
+                                 ('low', '<f4'), ('close', '<f4'), ('volume', '<f4'), ('value', '<f4'), ('vwap', '<f4'),
+                                 ('ret', '<f4')])
+        output.tofile(outpath)
+        log.write("Correct successfully!\n\n")
+            
 
 
 
@@ -243,7 +311,7 @@ def index(start,end,mode):
                     mm = day[4:6]
             }
             if os.path.isfile(csvpath):
-                log.write(csvpath + "\n\n")
+*                log.write(csvpath + "\n\n")
                 if mode == 0:
                     check_function(csvpath,correct = 0)
                 if mode == 1:
