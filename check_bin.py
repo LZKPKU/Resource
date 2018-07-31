@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 # encoding: utf-8
 """
 tools for checking and correcting the 1min-binary data
@@ -10,50 +10,53 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import autobase as ab
+from util import tradingday
 
 STYLE = "%Y%m%d"    #data format
 TODAY = datetime.strftime(datetime.today(),STYLE) #date of today
-LOGPATH = "log.txt" # path of log file
 ZERO_THRES = 0      # threshold for zero problem
 REPEAT_THRES = 20   # threshold for repeat problem
 REER_THRES = 0.05   # threshold for relative error
+CSVPATH = "/data/stock/1min_csv/{yyyy}/{mm}/1min_{date}.csv"
+OUTPATH = "/data/stock/1min_bin/{yyyy}/{mm}/"
 
-log = open(LOGPATH, 'w')
 
-
-# @brief Given two numbers, calculate the relative error
-# @param a
-# @param b
-# @return relative error
-def comp(a, b):
-    '''
-    calculate the relative error and compare it to the threshold.
-    '''
-    # if a is 0 while b isn't, rerr is 2.0
-    avg = (a + b) / 2
-    if avg != 0:
-        rerr = abs(a - b) / avg
-        if rerr > REER_THRES:
-            return rerr
-        else:
-            return 0
-    else:
-        return 0
-# @brief check the bin data quality of some date
+## @brief check the bin data quality of some date
 # @param csvpath the path of csv file
+# @param correct whether to correct or not
 # @return
 # the result will be written into log file.
-def check_function(csvpath,correct=0):
+def check_function(csvpath, correct=0):
+
+    def comp(a, b):
+        '''
+        calculate the relative error and compare it to the threshold.
+        '''
+        # if a is 0 while b isn't, rerr is 2.0
+        avg = (a + b) / 2
+        if avg != 0:
+            rerr = abs(a - b) / avg
+            if rerr > REER_THRES:
+                return rerr
+            else:
+                return 0
+        else:
+            return 0
+        
     date = csvpath[-12:-4]
+    outpath = OUTPATH.format(
+         yyyy = csvpath[-12:-8],
+         mm = csvpath[-8:-6]
+    )
+
     VV_FLAG = False        # value and volume error
     ZERO_REPEAT_FLAG = False      # zero error or repeat error
     
-    binpath = csvpath.replace("csv","bin")
-    binpath = binpath[:20] + "_old" + binpath[20:]
+    binpath = csvpath.replace("csv", "bin")
     csvdf = pd.read_csv(csvpath)
     # test for the condition that bin file doesn't exist
     if os.path.getsize(binpath):
-        bindf = bindf = pd.DataFrame(ab.objects.read_kline_from_file(binpath))
+        bindf = pd.DataFrame(ab.objects.read_kline_from_file(binpath))
     else:
         log.write("Binary file doesn't exist.\n")
         if correct == 1:
@@ -85,15 +88,15 @@ def check_function(csvpath,correct=0):
             tmpp.append(bindf["time"][i+1])
     
     # deal with the measure incongruity in volume and value between csv and bin
-    bindf = bindf.drop(["code","time"],axis=1)
+    bindf = bindf.drop(["code", "time"],axis=1)
     bindf["stkcd"] = tmp
     bindf["time"] = tmpp
     csvdf["volume"] = csvdf["volume"]/10000
     csvdf["value"] = csvdf["value"]/10000
   
     # code that csv has while bin doesn't
-    csvcode = set(csvdf.code.unique()) - set(bindf.stkcd.unique())
-    bincode = set(bindf.stkcd.unique()) - set(csvdf.code.unique())
+    csvcode = set(csvdf.stkcd.unique()) - set(bindf.stkcd.unique())
+    bincode = set(bindf.stkcd.unique()) - set(csvdf.stkcd.unique())
     log.write("code that csv has while bin doesn't: \n")
     for code_ in csvcode:
         log.write("{code} \n".format(
@@ -102,7 +105,7 @@ def check_function(csvpath,correct=0):
         )
         
     # calculate and record the summary of value and volume
-    result = pd.merge(csvdf,bindf,on=["stkcd","time"])
+    result = pd.merge(csvdf,bindf,on=["stkcd", "time"])
     valuesum = sum(result["value_x"])-sum(result["value_y"])
     volumesum = sum(result["volume_x"])-sum(result["volume_y"])
     log.write("value total error(csv - bin): {valuesum}\n".format(
@@ -122,14 +125,14 @@ def check_function(csvpath,correct=0):
     # calculate and record the error in open,close,high and low
     error = []
     replace_code = ()
-    items = ["open","high","low","close"]
+    items = ["open", "high", "low", "close"]
     for i in range(len(result)):
         for item in items:
             x = item + "_x"
             y = item + "_y"
-            _ = comp(result[x][i],result[y][i])
+            _ = comp(result[x][i], result[y][i])
             if _:
-                error.append([result["stkcd"][i],result["time"][i],item,str(_)])
+                error.append([result["stkcd"][i], result["time"][i], item, str(_)])
                 info = "{code} {time} {item} Err:{err}\n".format(
                         code = result["stkcd"][i],
                         time = result["time"][i],
@@ -139,10 +142,10 @@ def check_function(csvpath,correct=0):
                 log.write(info)
     if error:            
         error = pd.DataFrame(error)
-        zero = error[error[4] == "2.0"]
-        repeat = error[error[4] != "2.0"]
-        zero.groupby([0])[1].count()
-        repeat.groupby([0])[1].count()
+        zero = error[error[3] == "2.0"]
+        repeat = error[error[3] != "2.0"]
+        zero = zero.groupby([0])[1].count()
+        repeat = repeat.groupby([0])[1].count()
         zerocode = set(zero[zero > ZERO_THRES].reset_index()[0].unique())
         repeatcode = set(repeat[repeat > REPEAT_THRES].reset_index()[0].unique())
         replace_code = zerocode | repeatcode
@@ -155,72 +158,76 @@ def check_function(csvpath,correct=0):
                 )
             )
     else:
-        log.write("Dont't have zero or repeat problem.\n")
+        log.write("Don't have zero or repeat problem.\n")
     
     log.write("\n")
     
     if correct:
-        outpath = "test.bin"
-        result = pd.merge(csvdf,bindf,on=["stkcd","time"],how="outer")
-        newdf = []
-        value_src = "value_y"
-        volume_src = "volume_y"
-        open_src = "open_y"
-        close_src = "close_y"
-        high_src = "high_y"
-        low_src = "low_y"
-        
-        if VV_FLAG:
-            value_src = "value_x"
-            volume_src = "volume_x"
-            
-        for i in range(len(result)):
-            if not result["time"][i] % 10000:
-                time = result["time"][i] - 4100
-            else:
-                time = result["time"][i] - 100
-            code = result["stkcd"][i].encode(encoding="ascii")
-            if result["stkcd"][i] in csvcode:
-                tmp = (code, date, time,
-                   result["open_x"][i], result["high_x"][i], result["low_x"][i], result["close_x"][i], 
-                   result["value_x"][i],result["volume_x"][i], result["vwap"][i], result["ret"][i])
-            elif result["stkcd"][i] in bincode:
-                tmp = (code, date, time,
-                   result["open_y"][i], result["high_y"][i], result["low_y"][i], result["close_y"][i], 
-                   result["value_y"][i],result["volume_y"][i], result["vwap"][i], result["ret"][i])
-            elif result["stkcd"][i] in replace_code:   
-                tmp = (code, date, time,
-                   result["open_x"][i], result["high_x"][i], result["low_x"][i], result["close_x"][i], 
-                   result[volume_src][i],result[value_src][i], result["vwap"][i], result["ret"][i])
-            else:
-                tmp = (code, date, time,
-                   result["open_y"][i], result["high_y"][i], result["low_y"][i], result["close_y"][i], 
-                   result[volume_src][i],result[value_src][i], result["vwap"][i], result["ret"][i])
-            newdf.append(tmp)
-        newdf = pd.DataFrame(newdf,
-                                 columns=["code", "date", "time", "open", "high", "low", "close", "volume", "value", "vwap",
-                                 "ret"])
-        newdf.sort_values(["code", "date", "time"], inplace=True)
+        if VV_FLAG or ZERO_REPEAT_FLAG:
+            result = pd.merge(csvdf, bindf, on=["stkcd","time"], how="outer")
+            newdf = []
+            value_src = "value_y"
+            volume_src = "volume_y"
+            open_src = "open_y"
+            close_src = "close_y"
+            high_src = "high_y"
+            low_src = "low_y"
 
-        output = list(map(lambda x: tuple(newdf.iloc[x]), range(len(newdf))))
-        output = np.array(output,
-                          dtype=[('code', 'S32'), ('date', '<i4'), ('time', '<i4'), ('open', '<f4'), ('high', '<f4'),
-                                 ('low', '<f4'), ('close', '<f4'), ('volume', '<f4'), ('value', '<f4'), ('vwap', '<f4'),
-                                 ('ret', '<f4')])
-        output.tofile(outpath)
-        log.write("Correct successfully!\n\n")
+            if VV_FLAG:
+                value_src = "value_x"
+                volume_src = "volume_x"
+
+            for i in range(len(result)):
+                if not result["time"][i] % 10000:
+                    time = result["time"][i] - 4100
+                else:
+                    time = result["time"][i] - 100
+                code = result["stkcd"][i].encode(encoding="ascii")
+                if result["stkcd"][i] in csvcode:
+                    tmp = (code, date, time,
+                       result["open_x"][i], result["high_x"][i], result["low_x"][i], result["close_x"][i],
+                       result["volume_x"][i], result["value_x"][i], result["vwap"][i], result["ret"][i])
+                elif result["stkcd"][i] in bincode:
+                    tmp = (code, date, time,
+                       result["open_y"][i], result["high_y"][i], result["low_y"][i], result["close_y"][i],
+                       result["volume_y"][i], result["value_y"][i], result["vwap"][i], result["ret"][i])
+                elif result["stkcd"][i] in replace_code:
+                    tmp = (code, date, time,
+                       result["open_x"][i], result["high_x"][i], result["low_x"][i], result["close_x"][i],
+                       result[volume_src][i], result[value_src][i], result["vwap"][i], result["ret"][i])
+                else:
+                    tmp = (code, date, time,
+                       result["open_y"][i], result["high_y"][i], result["low_y"][i], result["close_y"][i],
+                       result[volume_src][i], result[value_src][i], result["vwap"][i], result["ret"][i])
+                newdf.append(tmp)
+            newdf = pd.DataFrame(newdf,
+                                     columns=["code", "date", "time", "open", "high", "low", "close", "volume", "value", "vwap",
+                                     "ret"])
+            newdf.sort_values(["code", "date", "time"], inplace=True)
+
+            output = list(map(lambda x: tuple(newdf.iloc[x]), range(len(newdf))))
+            output = np.array(output,
+                              dtype=[('code', 'S32'), ('date', '<i4'), ('time', '<i4'), ('open', '<f4'), ('high', '<f4'),
+                                     ('low', '<f4'), ('close', '<f4'), ('volume', '<f4'), ('value', '<f4'), ('vwap', '<f4'),
+                                     ('ret', '<f4')]) 
+            if not os.path.exists(outpath):
+                os.makedirs(outpath)
+            output.tofile(outpath + "1min_" + date + ".bin")
+            log.write("Correct successfully!\n\n")
+        else:
+            log.write("Don't need to correct!\n\n")
 
 
-# @brief replace the binary file using csv file 
+## @brief replace the binary file using csv file 
 # @param csvpath path of csv file
 # @return
-    
 def replace_function(csvpath):
-    binpath = csvpath.replace("csv","bin")
-    binpath = binpath[:20] + "_old" + binpath[20:]
-    #outpath = binpath
-    # test
-    outpath = "test.bin"
+    date = csvpath[-12:-4]
+    binpath = csvpath.replace("csv", "bin")
+    outpath = OUTPATH.format(
+         yyyy = csvpath[-12:-8],
+         mm = csvpath[-8:-6]
+    )
     # test for the condition that bin file doesn't exist
     if os.path.getsize(binpath):
         ori_bindf = pd.DataFrame(ab.objects.read_kline_from_file(binpath))
@@ -241,7 +248,23 @@ def replace_function(csvpath):
     newdf = bindf
     
     if len(ori_bindf):
-        
+        ori_bindf = ori_bindf[["code", "date", "time", "close", "open", "high", "low", "volume", "value", "vwap", "ret"]]
+         # deal with the condition that code starts with "IF", which mainly occured in 2010 and 2011
+        end = len(ori_bindf)
+        for i in range(len(ori_bindf)):
+            if ori_bindf["code"][i][0:2].decode("ascii")=="IF":
+                end = i
+                break
+        ori_bindf = ori_bindf[:end]
+    
+        tmp = []
+        # deal with the time incongruity between csv and bin 
+        # deal with the illegal code in bin
+        for i in range(len(ori_bindf)):
+            tmp.append(ori_bindf["code"][i][:9].decode("ascii"))
+        # deal with the measure incongruity in volume and value between csv and bin
+        ori_bindf = ori_bindf.drop(["code"],axis=1)
+        ori_bindf["code"] = tmp
         bindf = pd.DataFrame(bindf,
                                  columns=["code", "date", "time", "open", "high", "low", "close", "volume", "value", "vwap",
                                  "ret"])
@@ -274,65 +297,67 @@ def replace_function(csvpath):
                       dtype=[('code', 'S32'), ('date', '<i4'), ('time', '<i4'), ('open', '<f4'), ('high', '<f4'),
                              ('low', '<f4'), ('close', '<f4'), ('volume', '<f4'), ('value', '<f4'), ('vwap', '<f4'),
                              ('ret', '<f4')])
-    output.tofile(outpath)
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+    output.tofile(outpath + "1min_" + date + ".bin")
     log.write("Replace successfully!\n")
-    
-# @brief calculate all the dates between two dates
-# @param start start date(included)
-# @param end   end date(included)
-# @return string list of dates
-def daysbetween(start,end):
-    start_ = datetime.strptime(start,STYLE)
-    end_ = datetime.strptime(end,STYLE)
-    day = timedelta(days=1)
-    dates = []
-    d = start_
-    while d < end_ + day:
-        dates.append(datetime.strftime(d,STYLE))
-        d = d + day
-    return dates
 
-# @brief other operations before and after main operation
+
+## @brief other operations before and after check or replace
 # @param start start date(included)
 # @param end   end date(included)
+# @param mode  type of operation
 # @return 
 def index(start,end,mode):
+    global log
+    def daysbetween(start,end):
+        start_ = datetime.strptime(start,STYLE)
+        end_ = datetime.strptime(end,STYLE)
+        day = timedelta(days=1)
+        dates = []
+        d = start_
+        while d < end_ + day:
+            dates.append(datetime.strftime(d,STYLE))
+            d = d + day
+        return dates
     dates = daysbetween(start,end)
-    log_mode = ["check","check_and_correct","replace"]
-    log.write("log date: "+TODAY+"\n")
-    log.write("Type: "+log_mode[mode]+"\n")
-    log.write("Start: "+dates[0]+"\n")
-    log.write("End: "+dates[-1]+"\n")
     for day in dates:
-        csvpath = "/data/stock/1min_csv/{yyyy}/{mm}/1min_{date}.csv".format{
+        csvpath = CSVPATH.format(
                 date = day,
                 yyyy = day[:4],
                 mm = day[4:6]
-        }
+        )
         if os.path.isfile(csvpath):
-*           log.write(csvpath + "\n\n")
+            logpath = OUTPATH.format(
+                yyyy = day[:4],
+                mm = day[4:6]
+        )
+            if not os.path.exists(logpath):
+                os.makedirs(logpath)
+            log = open(logpath + "1min_" + day + "log.txt",'a')
+            log.write(day + "\n\n")
+            log.write("Check date: " + TODAY + "\n")
             if mode == 0:
-                check_function(csvpath,correct = 0)
+                check_function(csvpath, correct = 0)
             if mode == 1:
-                check_function(csvpath,correct = 1)
+                check_function(csvpath, correct = 1)
             if mode == 2:
                 replace_function(csvpath)
-    log.close()
+            log.close()
     
- if __name__ == "__main__":
-       
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-b","--begdate",help = "8-digit start date(included)")
-    parser.add_argument("-e","--enddate",default = TODAY,help = "8-digit end date(included)")
-    parser.add_argument("--check",action = "store_true",help="check")
-    parser.add_argument("--check_and_correct",action = "store_true",help="check, then correct automatically)
-    parser.add_argument("--replace",action = "store_true",help="replace")
+    parser.add_argument("-b", "--begdate", default = TODAY, help = "8-digit start date(included)")
+    parser.add_argument("-e", "--enddate", default = TODAY, help = "8-digit end date(included)")
+    parser.add_argument("--check", action = "store_true", help="check")
+    parser.add_argument("--check_and_correct", action = "store_true", help="check, then correct automatically")
+    parser.add_argument("--replace", action = "store_true", help="replace")
     
     options = parser.parse_args()
     
     if options.check:
-        index(options.start,options.end,0)
+        index(options.begdate,options.enddate, 0)
     if options.check_and_correct:
-        index(options.start,options.end,1)
+        index(options.begdate,options.enddate, 1)
     if options.replace:
-        index(options.start,options.end,2)
+        index(options.begdate,options.enddate, 2)
